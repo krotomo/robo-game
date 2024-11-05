@@ -1,3 +1,5 @@
+import { M3 } from "./math";
+
 declare global {
   interface HTMLImageElement {
     sprite: Sprite;
@@ -47,22 +49,23 @@ class Material {
 }
 
 class Sprite {
-  private gl: WebGLRenderingContext;
   private isLoaded: boolean;
   private material: Material;
   private image: HTMLImageElement;
   private geo_buff: WebGLBuffer | null = null;
 
   constructor(
-    gl: WebGLRenderingContext,
-    img_url: string,
-    vs: string,
-    fs: string,
     private gl_tex: WebGLTexture | null = null,
     private tex_buff: WebGLBuffer | null = null,
     private aPositionLoc: number | null = null,
     private aTexCoordLoc: number | null = null,
-    private iImageLoc: WebGLUniformLocation | null = null
+    private uImageLoc: WebGLUniformLocation | null = null,
+    private uWorldLoc: WebGLUniformLocation | null = null,
+    private worldSpaceMatrix: M3 | null = null,
+    private gl: WebGLRenderingContext,
+    img_url: string,
+    vs: string,
+    fs: string
   ) {
     this.gl = gl;
     this.isLoaded = false;
@@ -127,7 +130,8 @@ class Sprite {
       this.material.program!,
       "a_texCoord"
     );
-    this.iImageLoc = gl.getUniformLocation(this.material.program!, "u_image");
+    this.uImageLoc = gl.getUniformLocation(this.material.program!, "u_image");
+    this.uWorldLoc = gl.getUniformLocation(this.material.program!, "u_world");
 
     gl.useProgram(null);
     this.isLoaded = true;
@@ -139,15 +143,17 @@ class Sprite {
     gl.useProgram(this.material.program!);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.gl_tex);
-    gl.uniform1i(this.iImageLoc!, 0);
+    gl.uniform1i(this.uImageLoc!, 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.tex_buff);
     gl.enableVertexAttribArray(this.aTexCoordLoc!);
     gl.vertexAttribPointer(this.aTexCoordLoc!, 2, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.geo_buff);
     gl.enableVertexAttribArray(this.aPositionLoc!);
     gl.vertexAttribPointer(this.aPositionLoc!, 2, gl.FLOAT, false, 0, 0);
+    gl.uniformMatrix3fv(this.uWorldLoc!, false, this.worldSpaceMatrix.matrix);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 6);
+    gl.useProgram(null);
   }
 }
 
-export default Sprite;
+export { Material, Sprite };
