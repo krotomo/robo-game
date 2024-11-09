@@ -11,7 +11,11 @@ class Material {
     private gl: WebGLRenderingContext,
     private vs: string,
     private fs: string,
-    public program: WebGLProgram | null = null
+    public program: WebGLProgram | null = null,
+    public parameters: Record<
+      string,
+      { location: number; uniform: boolean; type: number }
+    > = {}
   ) {
     this.gl = gl;
     let vsShader = this.getShader(vs, this.gl.VERTEX_SHADER);
@@ -31,6 +35,7 @@ class Material {
       this.gl.detachShader(this.program, vsShader);
       this.gl.detachShader(this.program, fsShader);
     }
+    this.gatherParams();
   }
 
   getShader(script: string, type: number) {
@@ -46,6 +51,92 @@ class Material {
 
     return output;
   }
+
+  gatherParams() {
+    let gl = this.gl;
+    let isUniform = 0;
+    this.parameters = {};
+    while (isUniform < 2) {
+      let paramType = isUniform ? gl.ACTIVE_UNIFORMS : gl.ACTIVE_ATTRIBUTES;
+      let count = gl.getProgramParameter(this.program!, paramType);
+      for (let i = 0; i < count; i++) {
+        let details;
+        let location;
+        if (isUniform) {
+          details = gl.getActiveUniform(this.program!, i);
+          location = gl.getUniformLocation(this.program!, details!.name);
+        } else {
+          details = gl.getActiveAttrib(this.program!, i);
+          location = gl.getAttribLocation(this.program!, details!.name);
+        }
+        this.parameters[details!.name] = {
+          location: location as number,
+          uniform: !!isUniform,
+          type: details!.type,
+        };
+      }
+      isUniform++;
+    }
+  }
+
+  set(
+    name: string,
+    a: number | Float32Array,
+    b?: number | boolean,
+    c?: number,
+    d?: number,
+    e?: number
+  ) {
+    let gl = this.gl;
+    let param = this.parameters[name];
+    if (!param) return;
+    let loc = param.location;
+    if (param.uniform) {
+      switch (param.type) {
+        case gl.FLOAT:
+          gl.uniform1f(loc, a as number);
+          break;
+        case gl.FLOAT_VEC2:
+          gl.uniform2f(loc, a as number, b as number);
+          break;
+        case gl.FLOAT_VEC3:
+          gl.uniform3f(loc, a as number, b as number, c!);
+          break;
+        case gl.FLOAT_VEC4:
+          gl.uniform4f(loc, a as number, b as number, c!, d!);
+          break;
+        case gl.FLOAT_MAT3:
+          gl.uniformMatrix3fv(loc, false, a as Float32Array);
+          break;
+        case gl.FLOAT_MAT4:
+          gl.uniformMatrix4fv(loc, false, a as Float32Array);
+          break;
+        case gl.SAMPLER_2D:
+          gl.uniform1i(loc, a as number);
+          break;
+      }
+    } else {
+      gl.enableVertexAttribArray(loc);
+      if (a == undefined) a = gl.FLOAT;
+      let normalized = typeof b === "boolean" ? b : false;
+      if (c == undefined) c = 0;
+      if (d == undefined) d = 0;
+      switch (param.type) {
+        case gl.FLOAT:
+          gl.vertexAttribPointer(loc, 1, gl.FLOAT, normalized, c, d);
+          break;
+        case gl.FLOAT_VEC2:
+          gl.vertexAttribPointer(loc, 2, gl.FLOAT, normalized, c, d);
+          break;
+        case gl.FLOAT_VEC3:
+          gl.vertexAttribPointer(loc, 3, gl.FLOAT, normalized, c, d);
+          break;
+        case gl.FLOAT_VEC4:
+          gl.vertexAttribPointer(loc, 4, gl.FLOAT, normalized, c, d);
+          break;
+      }
+    }
+  }
 }
 
 class Sprite {
@@ -55,12 +146,6 @@ class Sprite {
   private geo_buff: WebGLBuffer | null = null;
   private gl_tex: WebGLTexture | null = null;
   private tex_buff: WebGLBuffer | null = null;
-  private uImageLoc: WebGLUniformLocation | null = null;
-  private uWorldLoc: WebGLUniformLocation | null = null;
-  private uFrameLoc: WebGLUniformLocation | null = null;
-  private uObjectLoc: WebGLUniformLocation | null = null;
-  private aPositionLoc: number | null = null;
-  private aTexCoordLoc: number | null = null;
   private uv_x: number = 0;
   private uv_y: number = 0;
   size: V2;
@@ -145,19 +230,6 @@ class Sprite {
       gl.STATIC_DRAW
     );
 
-    this.aPositionLoc = gl.getAttribLocation(
-      this.material.program!,
-      "a_position"
-    );
-    this.aTexCoordLoc = gl.getAttribLocation(
-      this.material.program!,
-      "a_texCoord"
-    );
-    this.uImageLoc = gl.getUniformLocation(this.material.program!, "u_image");
-    this.uFrameLoc = gl.getUniformLocation(this.material.program!, "u_frame");
-    this.uWorldLoc = gl.getUniformLocation(this.material.program!, "u_world");
-    this.uObjectLoc = gl.getUniformLocation(this.material.program!, "u_object");
-
     gl.useProgram(null);
     this.isLoaded = true;
   }
@@ -174,25 +246,19 @@ class Sprite {
 
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.gl_tex);
-    gl.uniform1i(this.uImageLoc!, 0);
+    this.material.set("u_image", 0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.tex_buff);
-    gl.enableVertexAttribArray(this.aTexCoordLoc!);
-    gl.vertexAttribPointer(this.aTexCoordLoc!, 2, gl.FLOAT, false, 0, 0);
+    this.material.set("a_texCoord", gl.FLOAT, false, 0, 0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.geo_buff);
-    gl.enableVertexAttribArray(this.aPositionLoc!);
-    gl.vertexAttribPointer(this.aPositionLoc!, 2, gl.FLOAT, false, 0, 0);
+    this.material.set("a_position", gl.FLOAT, false, 0, 0);
 
-    gl.uniform2f(this.uFrameLoc!, frame_x, frame_y);
-    gl.uniformMatrix3fv(
-      this.uWorldLoc!,
-      false,
-      window.game.worldSpaceMatrix?.getFloatArray()!
-    );
-    gl.uniformMatrix3fv(this.uObjectLoc!, false, objectMatrix.getFloatArray()!);
+    this.material.set("u_frame", frame_x, frame_y);
+    this.material.set("u_world", window.game.worldSpaceMatrix?.getFloatArray());
+    this.material.set("u_object", objectMatrix.getFloatArray()!);
 
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 6);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
 
     gl.useProgram(null);
   }
