@@ -62,6 +62,10 @@ class M3 {
     m.matrix[M3.M11] = v.y;
     return this.multiply(m);
   }
+
+  getFloatArray() {
+    return new Float32Array(this.matrix);
+  }
 }
 
 class V2 {

@@ -1,4 +1,4 @@
-import { M3 } from "./math";
+import { M3, V2 } from "./math";
 
 declare global {
   interface HTMLImageElement {
@@ -53,23 +53,35 @@ class Sprite {
   private material: Material;
   private image: HTMLImageElement;
   private geo_buff: WebGLBuffer | null = null;
+  private gl_tex: WebGLTexture | null = null;
+  private tex_buff: WebGLBuffer | null = null;
+  private uImageLoc: WebGLUniformLocation | null = null;
+  private uWorldLoc: WebGLUniformLocation | null = null;
+  private uFrameLoc: WebGLUniformLocation | null = null;
+  private uObjectLoc: WebGLUniformLocation | null = null;
+  private aPositionLoc: number | null = null;
+  private aTexCoordLoc: number | null = null;
+  private uv_x: number = 0;
+  private uv_y: number = 0;
+  size: V2;
+  position: V2;
 
   constructor(
-    private gl_tex: WebGLTexture | null = null,
-    private tex_buff: WebGLBuffer | null = null,
-    private aPositionLoc: number | null = null,
-    private aTexCoordLoc: number | null = null,
-    private uImageLoc: WebGLUniformLocation | null = null,
-    private uWorldLoc: WebGLUniformLocation | null = null,
-    private worldSpaceMatrix: M3 | null = null,
     private gl: WebGLRenderingContext,
     img_url: string,
     vs: string,
-    fs: string
+    fs: string,
+    opts: { size: V2; position: V2 } = {
+      size: new V2(32, 32),
+      position: new V2(0, 0),
+    }
   ) {
-    this.gl = gl;
     this.isLoaded = false;
     this.material = new Material(this.gl, vs, fs);
+
+    this.size = opts.size;
+    this.position = opts.position;
+
     this.image = new Image();
     this.image.src = img_url;
     this.image.sprite = this;
@@ -114,13 +126,24 @@ class Sprite {
     );
     gl.bindTexture(gl.TEXTURE_2D, null);
 
+    this.uv_x = this.size.x / this.image.width;
+    this.uv_y = this.size.y / this.image.height;
+
     this.tex_buff = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.tex_buff);
-    gl.bufferData(gl.ARRAY_BUFFER, Sprite.createRectArray(), gl.STATIC_DRAW);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      Sprite.createRectArray(0, 0, this.uv_x, this.uv_y),
+      gl.STATIC_DRAW
+    );
 
     this.geo_buff = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.geo_buff);
-    gl.bufferData(gl.ARRAY_BUFFER, Sprite.createRectArray(), gl.STATIC_DRAW);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      Sprite.createRectArray(0, 0, this.size.x, this.size.y),
+      gl.STATIC_DRAW
+    );
 
     this.aPositionLoc = gl.getAttribLocation(
       this.material.program!,
@@ -131,27 +154,46 @@ class Sprite {
       "a_texCoord"
     );
     this.uImageLoc = gl.getUniformLocation(this.material.program!, "u_image");
+    this.uFrameLoc = gl.getUniformLocation(this.material.program!, "u_frame");
     this.uWorldLoc = gl.getUniformLocation(this.material.program!, "u_world");
+    this.uObjectLoc = gl.getUniformLocation(this.material.program!, "u_object");
 
     gl.useProgram(null);
     this.isLoaded = true;
   }
 
-  render() {
+  render(frames: V2) {
     if (!this.isLoaded) return;
     let gl = this.gl;
     gl.useProgram(this.material.program!);
+
+    let frame_x = Math.floor(frames.x) * this.uv_x;
+    let frame_y = Math.floor(frames.y) * this.uv_y;
+
+    let objectMatrix = new M3().translate(this.position);
+
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.gl_tex);
     gl.uniform1i(this.uImageLoc!, 0);
+
     gl.bindBuffer(gl.ARRAY_BUFFER, this.tex_buff);
     gl.enableVertexAttribArray(this.aTexCoordLoc!);
     gl.vertexAttribPointer(this.aTexCoordLoc!, 2, gl.FLOAT, false, 0, 0);
+
     gl.bindBuffer(gl.ARRAY_BUFFER, this.geo_buff);
     gl.enableVertexAttribArray(this.aPositionLoc!);
     gl.vertexAttribPointer(this.aPositionLoc!, 2, gl.FLOAT, false, 0, 0);
-    gl.uniformMatrix3fv(this.uWorldLoc!, false, this.worldSpaceMatrix.matrix);
+
+    gl.uniform2f(this.uFrameLoc!, frame_x, frame_y);
+    gl.uniformMatrix3fv(
+      this.uWorldLoc!,
+      false,
+      window.game.worldSpaceMatrix?.getFloatArray()!
+    );
+    gl.uniformMatrix3fv(this.uObjectLoc!, false, objectMatrix.getFloatArray()!);
+
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 6);
+
     gl.useProgram(null);
   }
 }

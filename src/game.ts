@@ -1,5 +1,5 @@
-import { Sprite } from "./material.js";
-import { M3, V2 } from "./math.js";
+import { Sprite } from "./material";
+import { M3, V2 } from "./math";
 
 declare global {
   interface Window {
@@ -11,15 +11,17 @@ class Game {
   private canvasElm: HTMLCanvasElement;
   private gl: WebGL2RenderingContext;
   private sprite: Sprite;
-  private worldSpaceMatrix: M3;
+  worldSpaceMatrix: M3;
 
   constructor() {
     this.canvasElm = document.createElement("canvas");
-    this.resize();
 
     this.worldSpaceMatrix = new M3();
 
+    this.resize();
+
     this.gl = this.canvasElm.getContext("webgl2")!;
+    this.gl.clearColor(0.4, 0.4, 1.0, 0.0);
 
     document.body.appendChild(this.canvasElm);
 
@@ -28,11 +30,13 @@ class Game {
       attribute vec2 a_texCoord;
 
       uniform mat3 u_world;
+      uniform mat3 u_object;
+      uniform vec2 u_frame;
 
       varying vec2 v_texCoord;
       void main() {
-        gl_Position = vec4(u_world * vec3(a_position, 1), 1);
-        v_texCoord = a_texCoord;
+        gl_Position = vec4(u_world * u_object *vec3(a_position, 1), 1);
+        v_texCoord = a_texCoord + u_frame;
       }
     `;
     const fs = `
@@ -45,31 +49,12 @@ class Game {
       }
     `;
 
-    this.sprite = new Sprite(
-      this.gl,
-      "assets/robobo.png",
-      vs,
-      fs,
-      this.worldSpaceMatrix
-    );
-
-    let m = new M3();
-    let n = new M3();
-    m.matrix[M3.M01] = 2;
-    m.matrix[M3.M11] = 5;
-
-    n.matrix[M3.M00] = 3;
-    n.matrix[M3.M20] = 6;
-    n.matrix[M3.M11] = 3;
-    n.matrix[M3.M21] = 4;
-
-    let c = m.multiply(n);
-    console.log(c.matrix);
+    this.sprite = new Sprite(this.gl, "assets/robobo.png", vs, fs);
 
     window.addEventListener("resize", () => this.resize());
   }
 
-  private resize(): void {
+  resize(): void {
     const targetAspectRatio = 16 / 9;
     const currentAspectRatio = window.innerWidth / window.innerHeight;
 
@@ -83,9 +68,9 @@ class Game {
       this.canvasElm.height = window.innerWidth / targetAspectRatio;
     }
 
-    this.worldSpaceMatrix = new M3()
-      .translate(new V2(-1, 1))
-      .scale(new V2(2 / this.canvasElm.width, -2 / this.canvasElm.height));
+    this.worldSpaceMatrix = new M3().scale(
+      new V2(2 / this.canvasElm.width, -2 / this.canvasElm.height)
+    );
   }
 
   update(): void {
@@ -95,7 +80,8 @@ class Game {
     this.gl.enable(this.gl.BLEND);
     this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
 
-    this.sprite.render();
+    this.sprite.position.x += 0.01;
+    this.sprite.render(new V2(0, 0));
 
     this.gl.flush();
   }
@@ -110,5 +96,7 @@ window.addEventListener("load", function (): void {
   window.game = new Game();
   loop();
 });
+
+window.addEventListener("resize", () => window.game.resize());
 
 export {};
